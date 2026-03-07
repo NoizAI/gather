@@ -33,7 +33,7 @@ import {
   clearDraft
 } from './ProjectCreator/reducer';
 import { PROJECT_TEMPLATES } from './ProjectCreator/templates';
-import { loadVoiceCharacters, addVoiceCharacter } from '../utils/voiceStorage';
+import { loadVoiceCharacters, loadVoiceCharactersFromCloud, addVoiceCharacter } from '../utils/voiceStorage';
 import { loadMediaItems, saveMediaItems } from '../utils/mediaStorage';
 import { PRESET_BGM_LIST, MediaPickerModal } from './MediaPickerModal';
 import type { MediaPickerResult } from './MediaPickerModal';
@@ -2841,6 +2841,9 @@ export function ProjectCreator({ onClose, onSuccess, initialData }: ProjectCreat
   // Load available voices on mount
   useEffect(() => {
     setAvailableVoices(loadVoiceCharacters());
+    loadVoiceCharactersFromCloud()
+      .then(voices => { if (voices.length > 0) setAvailableVoices(voices); })
+      .catch(err => console.error('Failed to load voices from cloud:', err));
     
     // Load system voices from backend
     api.getVoices()

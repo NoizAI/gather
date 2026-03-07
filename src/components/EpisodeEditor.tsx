@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { ReligionIconMap } from './icons/ReligionIcons';
 import * as api from '../services/api';
-import { loadVoiceCharacters, addVoiceCharacter, saveVoiceCharacters } from '../utils/voiceStorage';
+import { loadVoiceCharacters, loadVoiceCharactersFromCloud, addVoiceCharacter, saveVoiceCharacters } from '../utils/voiceStorage';
 import type { SectionVoiceAudio, SectionVoiceStatus, ProductionProgress, MixedAudioOutput } from './ProjectCreator/reducer';
 import { loadMediaItems, getMediaByType, getMediaByProject } from '../utils/mediaStorage';
 import type { MediaItem } from '../types';
@@ -234,6 +234,9 @@ export function EpisodeEditor({ episode, project, onSave, onClose }: EpisodeEdit
   // ============================================================
   useEffect(() => {
     setAvailableVoices(loadVoiceCharacters());
+    loadVoiceCharactersFromCloud()
+      .then(voices => { if (voices.length > 0) setAvailableVoices(voices); })
+      .catch(err => console.error('Failed to load voices from cloud:', err));
     api.getVoices()
       .then(voices => setSystemVoices(voices))
       .catch(err => console.error('Failed to load system voices:', err));

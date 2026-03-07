@@ -341,6 +341,8 @@ export async function saveAllVoiceCharactersForUser(
     refText?: string;
     isPublic?: boolean;
     projectIds?: string[];
+    audioSampleUrl?: string;
+    refAudioDataUrl?: string;
     createdAt: string;
     updatedAt: string;
   }>
@@ -389,6 +391,36 @@ export async function saveAllVoiceCharactersForUser(
       voice.createdAt,
       voice.updatedAt,
     ]);
+
+    // Upload base64 audio to GCS when the voice has no stored file yet
+    const audioData = voice.audioSampleUrl || voice.refAudioDataUrl;
+    if (audioData && audioData.startsWith('data:')) {
+      const existingRow = await query<{ audio_sample_file_id: string | null; ref_audio_file_id: string | null }>(
+        'SELECT audio_sample_file_id, ref_audio_file_id FROM voice_characters WHERE id = $1',
+        [voice.id]
+      );
+      const existing = existingRow.rows[0];
+      if (!existing?.audio_sample_file_id && !existing?.ref_audio_file_id) {
+        try {
+          const ext = audioData.startsWith('data:audio/wav') ? 'wav'
+            : audioData.startsWith('data:audio/ogg') ? 'ogg'
+            : audioData.startsWith('data:audio/webm') ? 'webm'
+            : 'mp3';
+          const gcsPath = `killagent/voice-samples/${voice.id}.${ext}`;
+          const file = await uploadAndCreateFile(userId, audioData, gcsPath, {
+            originalFilename: `${voice.name || 'voice'}-sample.${ext}`,
+            isPublic: false,
+          });
+          await query(
+            'UPDATE voice_characters SET audio_sample_file_id = $2, ref_audio_file_id = $2 WHERE id = $1',
+            [voice.id, file.id]
+          );
+          console.log(`Uploaded voice audio for ${voice.id} → file ${file.id}`);
+        } catch (err) {
+          console.error(`Failed to upload voice audio for ${voice.id}:`, err);
+        }
+      }
+    }
 
     // Replace project associations (small junction table, always sent in full)
     await query('DELETE FROM voice_character_projects WHERE voice_character_id = $1', [voice.id]);
