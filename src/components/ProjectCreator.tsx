@@ -17,8 +17,10 @@ import { parseStreamingScriptSections } from '../utils/partialJsonParser';
 import { 
   buildSpecAnalysisPrompt, 
   buildScriptGenerationPrompt,
+  buildCreativeContextExtractionPrompt,
   parseScriptGenerationResponse,
-  SpecAnalysisResult
+  SpecAnalysisResult,
+  CreativeContextExtraction
 } from '../services/llm/prompts';
 import type { BgmRecommendation } from '../services/llm/prompts';
 import { analyzeScriptCharacters } from '../services/llm';
@@ -90,6 +92,10 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
     production 
   } = state;
   
+  // Creative context ref for script generation
+  const creativeContextRef = useRef<string | undefined>(creativeContext);
+  const [isExtractingCreativeContext, setIsExtractingCreativeContext] = useState(!!creativeContext);
+
   // Local UI state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showSubtitle, setShowSubtitle] = useState(false);
@@ -395,7 +401,7 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
           structureHint: templateHints.structure,
           voiceDirectionHint: templateHints.voiceDirection,
         }),
-      }, userInstructions);
+      }, userInstructions, creativeContextRef.current);
 
       // Use backend streaming API for progressive generation (with file attachments)
       const finalText = await api.generateTextStream(
@@ -945,8 +951,8 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
   const canProceed = () => {
     switch (currentStep) {
       case 1: return selectedTemplateId !== null || customDescription.trim().length > 0; // Template selected OR custom description
-      case 2: return specData.storyTitle.trim().length > 0; // Title filled
-      case 3: return contentInput.textContent.trim().length > 0 || contentInput.uploadedFiles.length > 0; // Content provided
+      case 2: return specData.storyTitle.trim().length > 0 && !isExtractingCreativeContext; // Title filled and extraction done
+      case 3: return contentInput.textContent.trim().length > 0 || contentInput.uploadedFiles.length > 0 || !!creativeContextRef.current; // Content provided or creative context available
       case 4: return scriptSections.length > 0; // Script generated
       case 5: return voicesConfirmed && production.voiceGeneration.status === 'completed'; // Voice confirmed and generation done
       case 6: return production.mediaProduction.status === 'completed'; // Media production done
@@ -1292,6 +1298,15 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
 
     return (
       <div className="space-y-4 sm:space-y-6">
+        {/* Loading indicator when extracting from creative context */}
+        {isExtractingCreativeContext && (
+          <div className="flex items-center gap-3 px-5 py-4 rounded-xl border border-t-border animate-pulse" style={{ background: 'var(--t-bg-card)' }}>
+            <Loader2 size={18} className="animate-spin" style={{ color: theme.primaryLight }} />
+            <span className="text-sm text-t-text2">
+              {language === 'zh' ? '正在从创意对话中提取项目信息…' : 'Extracting project info from creative conversation…'}
+            </span>
+          </div>
+        )}
         {/* Spec Form */}
         <div className="rounded-xl border border-t-border overflow-hidden" style={{ background: 'var(--t-bg-card)' }}>
           <div className="px-5 py-4 border-b border-t-border flex items-center justify-between">
@@ -2949,12 +2964,46 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
     }
   }, [initialData]);
 
-  // Initialize from Creative Mode conversation context
+  // Initialize from Creative Mode: use AI to extract project spec from the brainstorming conversation
   useEffect(() => {
-    if (creativeContext) {
-      dispatch(actions.setTextContent(creativeContext));
-      setCustomDescription(creativeContext);
-    }
+    if (!creativeContext) return;
+
+    creativeContextRef.current = creativeContext;
+    setIsExtractingCreativeContext(true);
+
+    const prompt = buildCreativeContextExtractionPrompt(creativeContext);
+    api.generateText(prompt)
+      .then(responseText => {
+        const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/) ||
+                          responseText.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]).trim() : responseText;
+        const parsed = JSON.parse(jsonStr) as CreativeContextExtraction;
+
+        dispatch(actions.setSpec({
+          storyTitle: parsed.storyTitle || '',
+          subtitle: parsed.subtitle || '',
+          targetAudience: parsed.targetAudience || '',
+          formatAndDuration: parsed.formatAndDuration || '',
+          toneAndExpression: parsed.toneAndExpression || '',
+          addBgm: parsed.addBgm ?? true,
+          addSoundEffects: parsed.addSoundEffects ?? false,
+          hasVisualContent: parsed.hasVisualContent ?? false,
+        }));
+
+        if (parsed.subtitle) {
+          setShowSubtitle(true);
+        }
+
+        if (parsed.contentBrief) {
+          dispatch(actions.setTextContent(parsed.contentBrief));
+        }
+      })
+      .catch(err => {
+        console.error('Creative context extraction failed:', err);
+      })
+      .finally(() => {
+        setIsExtractingCreativeContext(false);
+      });
   }, [creativeContext]);
 
   // --- Draft Persistence: Restore on mount ---

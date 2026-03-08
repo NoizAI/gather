@@ -19,6 +19,8 @@ interface CreativeModeProps {
   onStartProduction: (conversationContext: string) => void;
 }
 
+const READY_MARKER = '<<READY>>';
+
 const CREATIVE_SYSTEM_PROMPT = `You are a creative audio producer working inside "Gather", a professional audio production studio. Your role is to help users brainstorm, shape, and refine their audio content ideas — podcasts, audiobooks, meditations, educational series, etc.
 
 Guidelines:
@@ -28,8 +30,10 @@ Guidelines:
 - When the user provides raw text or a script, help them refine it for audio
 - Suggest creative angles they might not have considered
 - Keep responses concise (2-4 short paragraphs max)
-- When you feel the concept is solid enough for production, mention they can hit "Start Production" to begin
-- Respond in the SAME LANGUAGE the user writes in`;
+- Respond in the SAME LANGUAGE the user writes in
+
+IMPORTANT — Production readiness signal:
+When you believe the conversation has gathered enough information to start production (i.e. the core topic, general direction, and at least some sense of audience or tone are established), append the EXACT marker <<READY>> at the very end of your response (after all visible text). This marker is hidden from the user and used by the system to enable the "Start Production" button. Only include it when there is genuinely enough context to produce something meaningful. Do NOT include it if the user has only said hello or the idea is still too vague.`;
 
 function buildChatPrompt(messages: ChatMessage[]): string {
   let prompt = CREATIVE_SYSTEM_PROMPT + '\n\n';
@@ -59,6 +63,7 @@ export function CreativeMode({ onSwitchToWorkspace, onStartProduction }: Creativ
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [readyForProduction, setReadyForProduction] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef(false);
@@ -102,16 +107,23 @@ export function CreativeMode({ onSwitchToWorkspace, onStartProduction }: Creativ
         (chunk) => {
           if (abortRef.current) return;
           accumulated = chunk.accumulated;
-          setStreamingContent(accumulated);
+          setStreamingContent(accumulated.replace(READY_MARKER, '').trimEnd());
         },
         { temperature: 0.8, maxTokens: 1024 }
       );
 
       if (!abortRef.current) {
+        const hasReadyMarker = accumulated.includes(READY_MARKER);
+        const cleanContent = accumulated.replace(READY_MARKER, '').trimEnd();
+
+        if (hasReadyMarker) {
+          setReadyForProduction(true);
+        }
+
         const assistantMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: accumulated,
+          content: cleanContent,
           timestamp: Date.now(),
         };
         setMessages(prev => [...prev, assistantMsg]);
@@ -144,6 +156,7 @@ export function CreativeMode({ onSwitchToWorkspace, onStartProduction }: Creativ
     setStreamingContent('');
     setIsStreaming(false);
     setInput('');
+    setReadyForProduction(false);
     inputRef.current?.focus();
   };
 
@@ -153,7 +166,7 @@ export function CreativeMode({ onSwitchToWorkspace, onStartProduction }: Creativ
   };
 
   const hasMessages = messages.length > 0;
-  const canStartProduction = messages.length >= 2;
+  const canStartProduction = readyForProduction;
 
   return (
     <div className="h-screen flex flex-col" style={{ background: 'var(--t-bg)' }}>

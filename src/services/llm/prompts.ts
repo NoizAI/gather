@@ -71,7 +71,33 @@ ${content}
 Return ONLY the JSON object, no other text.`;
 }
 
-export function buildScriptGenerationPrompt(content: string, config: ScriptGenerationConfig, userInstructions?: string): string {
+export interface CreativeContextExtraction extends SpecAnalysisResult {
+  contentBrief: string;
+}
+
+export function buildCreativeContextExtractionPrompt(conversationContext: string): string {
+  return `You are a professional audio production planner. Analyze the following brainstorming conversation between a user and a creative producer. Extract the project specifications that were discussed or can be inferred.
+
+Return a JSON object with these fields:
+- storyTitle: The title for the project (infer from the discussion)
+- subtitle: A short subtitle or tagline (optional, can be empty string)
+- targetAudience: Who this content is for (infer from context)
+- formatAndDuration: Format and estimated duration (e.g. "Audio podcast, ~5 minutes")
+- toneAndExpression: The tone and style discussed or implied
+- addBgm: boolean - whether background music would be appropriate
+- addSoundEffects: boolean - whether sound effects would be appropriate
+- hasVisualContent: boolean - false unless visual content was explicitly discussed
+- contentBrief: A concise content brief (2-4 sentences) summarizing what the final audio content should contain based on the brainstorming. Describe the content itself, NOT the conversation.
+
+Respond in the SAME LANGUAGE the conversation is in.
+
+Brainstorming Conversation:
+${conversationContext}
+
+Return ONLY the JSON object, no other text.`;
+}
+
+export function buildScriptGenerationPrompt(content: string, config: ScriptGenerationConfig, userInstructions?: string, creativeContext?: string): string {
   const visualInstruction = config.hasVisualContent 
     ? '\n  - coverImageDescription: visual description for this section'
     : '';
@@ -92,15 +118,31 @@ Also include a top-level "bgmRecommendation" with:
     ? `\n5. USER INSTRUCTIONS (follow these additional requirements when processing the content):\n${userInstructions.trim()}\n`
     : '';
 
-  return `Convert this content into a structured podcast script.
+  const hasContent = content.trim().length > 0;
+  const isCreativeMode = !!creativeContext;
+
+  const creativeContextSection = creativeContext
+    ? `\nBrainstorming Conversation (the user discussed their ideas with a creative producer — use this as the primary source for generating the script):\n${creativeContext}\n`
+    : '';
+
+  const introLine = isCreativeMode && !hasContent
+    ? 'Generate an original structured podcast script based on the brainstorming conversation below.'
+    : isCreativeMode && hasContent
+      ? 'Generate a structured podcast script based on the brainstorming conversation and additional content below.'
+      : 'Convert this content into a structured podcast script.';
+
+  const contentSection = hasContent ? `\nContent: ${content}` : '';
+
+  const preserveRule = hasContent && !isCreativeMode
+    ? '2. Preserve original wording exactly. Do NOT rewrite, paraphrase, or expand contractions (keep "don\'t", "it\'s", etc.).\n3. Include ALL lines, even repeated ones. Do NOT deduplicate or skip.\n'
+    : '';
+
+  return `${introLine}
 
 RULES:
 1. Lines must be ACTUAL SPOKEN CONTENT only — no titles, headers, stage directions, or annotations. Use those as section "name"/"description" instead.
-2. Preserve original wording exactly. Do NOT rewrite, paraphrase, or expand contractions (keep "don't", "it's", etc.).
-3. Include ALL lines, even repeated ones. Do NOT deduplicate or skip.
-4. Keep continuous speech by the same speaker as ONE line. Only split on pause markers, tone shifts, or speaker changes.
-${userInstructionsSection}
-Content: ${content}
+${preserveRule}4. Keep continuous speech by the same speaker as ONE line. Only split on pause markers, tone shifts, or speaker changes.
+${userInstructionsSection}${creativeContextSection}${contentSection}
 
 Specs: Title: ${config.title} | Audience: ${config.targetAudience} | Format: ${config.formatAndDuration} | Tone: ${config.toneAndExpression} | BGM: ${config.addBgm ? 'Yes' : 'No'} | SFX: ${config.addSoundEffects ? 'Yes' : 'No'} | Visual: ${config.hasVisualContent ? 'Yes' : 'No'}
 
