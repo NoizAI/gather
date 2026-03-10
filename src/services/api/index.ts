@@ -1082,13 +1082,14 @@ export async function saveMediaItemsToCloud(items: MediaItemData[]): Promise<voi
 export async function uploadMediaFileToCloud(
   mediaId: string, 
   dataUrl: string, 
-  type: 'image' | 'bgm' | 'sfx'
+  type: 'image' | 'bgm' | 'sfx',
+  name?: string
 ): Promise<string> {
   const response = await apiFetch(`${API_BASE}/storage/media/${mediaId}/file`, {
     ...fetchOptions,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dataUrl, type })
+    body: JSON.stringify({ dataUrl, type, name })
   });
   
   if (!response.ok) {

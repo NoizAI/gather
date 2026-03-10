@@ -1850,21 +1850,21 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
                           </span>
                         </button>
                         {/* Play button for assigned voice */}
-                        {assignedSystemVoice && (
+                        {assignedVoiceId && hasAssignment && (
                           <button 
-                            onClick={() => playVoiceSample(assignedSystemVoice.id)}
-                            disabled={loadingVoiceId === assignedSystemVoice.id}
+                            onClick={() => playVoiceSample(assignedVoiceId)}
+                            disabled={loadingVoiceId === assignedVoiceId}
                             className={`p-2.5 rounded-lg transition-all ${
-                              playingVoiceId === assignedSystemVoice.id 
+                              playingVoiceId === assignedVoiceId 
                                 ? 'text-t-text1' 
                                 : 'text-t-text3 hover:text-t-text1 hover:bg-t-card-hover'
                             }`}
-                            style={playingVoiceId === assignedSystemVoice.id ? { background: theme.primary } : {}}
+                            style={playingVoiceId === assignedVoiceId ? { background: theme.primary } : {}}
                             title={language === 'zh' ? '试听' : 'Preview'}
                           >
-                            {loadingVoiceId === assignedSystemVoice.id ? (
+                            {loadingVoiceId === assignedVoiceId ? (
                               <Loader2 size={18} className="animate-spin" />
-                            ) : playingVoiceId === assignedSystemVoice.id ? (
+                            ) : playingVoiceId === assignedVoiceId ? (
                               <Square size={16} />
                             ) : (
                               <Play size={18} />

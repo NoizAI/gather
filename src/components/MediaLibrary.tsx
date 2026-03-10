@@ -107,8 +107,10 @@ export function MediaLibrary() {
     dataUrl: string;
     mimeType: string;
     size: number;
+    originalName: string;
     duration?: number;
   } | null>(null);
+  const [isDraggingUpload, setIsDraggingUpload] = useState(false);
 
   // Filter and search items
   const filteredItems = items.filter(item => {
@@ -167,9 +169,7 @@ export function MediaLibrary() {
     }
   }, []);
 
-  // File upload handler
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const processFile = async (file: File) => {
     if (!file) return;
 
     const dataUrl = await fileToDataUrl(file);
@@ -185,6 +185,7 @@ export function MediaLibrary() {
       dataUrl,
       mimeType: file.type,
       size: file.size,
+      originalName: file.name,
       duration
     });
 
@@ -204,6 +205,44 @@ export function MediaLibrary() {
     setShowUploadModal(true);
   };
 
+  // File upload handler
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processFile(file);
+  };
+
+  const handleDropUpload = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingUpload(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await processFile(file);
+  };
+
+  const handleDragEnterUpload = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingUpload(true);
+  };
+
+  const handleDragOverUpload = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingUpload) {
+      setIsDraggingUpload(true);
+    }
+  };
+
+  const handleDragLeaveUpload = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === e.target) {
+      setIsDraggingUpload(false);
+    }
+  };
+
   // Save uploaded media
   const saveUploadedMedia = async () => {
     if (!uploadedFile || !uploadForm.name.trim()) return;
@@ -214,7 +253,12 @@ export function MediaLibrary() {
     // Try to upload to cloud first
     let finalDataUrl = uploadedFile.dataUrl;
     try {
-      const cloudUrl = await uploadMediaToCloud(tempId, uploadedFile.dataUrl, uploadForm.type);
+      const cloudUrl = await uploadMediaToCloud(
+        tempId,
+        uploadedFile.dataUrl,
+        uploadForm.type,
+        uploadForm.name || uploadedFile.originalName
+      );
       if (cloudUrl && cloudUrl !== uploadedFile.dataUrl) {
         finalDataUrl = cloudUrl;
         console.log(`Uploaded media to cloud: ${cloudUrl}`);
@@ -411,7 +455,13 @@ export function MediaLibrary() {
   };
 
   return (
-    <div className="space-y-4 md:space-y-8 animate-fade-in">
+    <div
+      className="space-y-4 md:space-y-8 animate-fade-in"
+      onDragEnter={handleDragEnterUpload}
+      onDragOver={handleDragOverUpload}
+      onDragLeave={handleDragLeaveUpload}
+      onDrop={handleDropUpload}
+    >
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -449,6 +499,26 @@ export function MediaLibrary() {
         onChange={handleFileSelect}
         className="hidden"
       />
+
+      {isDraggingUpload && (
+        <div
+          className="fixed inset-0 z-40 pointer-events-none flex items-center justify-center"
+          style={{ background: 'rgba(0, 0, 0, 0.35)' }}
+        >
+          <div
+            className="rounded-2xl px-6 py-5 border border-t-border text-center"
+            style={{ background: 'var(--t-bg-base)' }}
+          >
+            <Upload size={24} className="mx-auto mb-2" style={{ color: theme.primaryLight }} />
+            <p className="text-t-text1 text-sm font-medium">
+              {t.mediaLibrary?.dropToUpload || 'Drop file to upload'}
+            </p>
+            <p className="text-t-text3 text-xs mt-1">
+              {t.mediaLibrary?.dropHint || 'Supports image and audio files'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

@@ -100,7 +100,8 @@ export async function loadMediaItemsFromCloudStorage(): Promise<MediaItem[]> {
 export async function uploadMediaToCloud(
   mediaId: string, 
   dataUrl: string, 
-  type: MediaType
+  type: MediaType,
+  name?: string
 ): Promise<string> {
   // Only upload if it's a base64 data URL (not already a cloud URL)
   if (!dataUrl.startsWith('data:')) {
@@ -109,7 +110,7 @@ export async function uploadMediaToCloud(
   }
   
   try {
-    const url = await uploadMediaFileToCloud(mediaId, dataUrl, type);
+    const url = await uploadMediaFileToCloud(mediaId, dataUrl, type, name);
     console.log(`Uploaded media ${type} for ${mediaId}: ${url}`);
     return url;
   } catch (error) {

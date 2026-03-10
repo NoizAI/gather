@@ -169,21 +169,21 @@ export function VoiceAssignmentStep({
                           : (language === 'zh' ? '选择音色...' : 'Select voice...')}
                       </span>
                     </button>
-                    {assignedSystemVoice && (
+                    {assignedVoiceId && hasAssignment && (
                       <button
-                        onClick={() => onPlayVoice(assignedSystemVoice.id)}
-                        disabled={loadingVoiceId === assignedSystemVoice.id}
+                        onClick={() => onPlayVoice(assignedVoiceId)}
+                        disabled={loadingVoiceId === assignedVoiceId}
                         className={`p-2.5 rounded-lg transition-all ${
-                          playingVoiceId === assignedSystemVoice.id
+                          playingVoiceId === assignedVoiceId
                             ? 'text-t-text1'
                             : 'text-t-text3 hover:text-t-text1 hover:bg-t-card-hover'
                         }`}
-                        style={playingVoiceId === assignedSystemVoice.id ? { background: theme.primary } : {}}
+                        style={playingVoiceId === assignedVoiceId ? { background: theme.primary } : {}}
                         title={language === 'zh' ? '试听' : 'Preview'}
                       >
-                        {loadingVoiceId === assignedSystemVoice.id ? (
+                        {loadingVoiceId === assignedVoiceId ? (
                           <Loader2 size={18} className="animate-spin" />
-                        ) : playingVoiceId === assignedSystemVoice.id ? (
+                        ) : playingVoiceId === assignedVoiceId ? (
                           <Square size={16} />
                         ) : (
                           <Play size={18} />
