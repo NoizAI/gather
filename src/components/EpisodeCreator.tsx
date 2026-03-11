@@ -10,11 +10,12 @@ import {
 } from 'lucide-react';
 import { ReligionIconMap } from './icons/ReligionIcons';
 import { collectAnalysisContent, filterValidFiles } from '../utils/fileUtils';
-import { buildScriptGenerationPrompt, parseScriptGenerationResponse } from '../services/llm/prompts';
+import { buildScriptGenerationPrompt, parseScriptGenerationResponse, validateScriptLines } from '../services/llm/prompts';
 import type { BgmRecommendation } from '../services/llm/prompts';
 import { analyzeScriptCharacters } from '../services/llm';
 import * as api from '../services/api';
 import { loadVoiceCharacters, loadVoiceCharactersFromCloud, addVoiceCharacter, saveVoiceCharacters } from '../utils/voiceStorage';
+import { processAudioFile } from '../utils/audioTrim';
 import type { SectionVoiceAudio, SectionVoiceStatus, ProductionProgress, MixedAudioOutput } from './ProjectCreator/reducer';
 import { loadMediaItems, getMediaByType, getMediaByProject } from '../utils/mediaStorage';
 import type { MediaItem } from '../types';
@@ -270,6 +271,7 @@ export function EpisodeCreator({ project, onClose, onSuccess }: EpisodeCreatorPr
   // ============================================================
   // Script generation (streaming)
   // ============================================================
+  const MAX_SCRIPT_RETRIES = 2;
   const generateScript = async () => {
     setIsGeneratingScript(true);
     setStreamingText('');
@@ -277,7 +279,6 @@ export function EpisodeCreator({ project, onClose, onSuccess }: EpisodeCreatorPr
       const hasFiles = uploadedFiles.length > 0;
       const hasText = textContent.trim().length > 0;
 
-      // When both files and text exist, text is treated as user instructions
       const userInstructions = (hasFiles && hasText) ? textContent : undefined;
       const textForCollection = (hasFiles && hasText) ? '' : textContent;
 
@@ -289,7 +290,8 @@ export function EpisodeCreator({ project, onClose, onSuccess }: EpisodeCreatorPr
         setIsGeneratingScript(false);
         return;
       }
-      const prompt = buildScriptGenerationPrompt(content, {
+
+      const promptConfig = {
         title: title || 'Episode',
         targetAudience: spec?.targetAudience || '',
         formatAndDuration: spec?.formatAndDuration || '',
@@ -297,15 +299,32 @@ export function EpisodeCreator({ project, onClose, onSuccess }: EpisodeCreatorPr
         addBgm: spec?.addBgm || false,
         addSoundEffects: spec?.addSoundEffects || false,
         hasVisualContent: spec?.hasVisualContent || false,
-      }, userInstructions);
-      const finalText = await api.generateTextStream(prompt, (chunk) => { setStreamingText(chunk.accumulated); }, { attachments });
-      const { sections, bgmRecommendation: bgmRec } = parseScriptGenerationResponse(finalText);
-      const typedSections = sections as ScriptSection[];
+      };
+
+      let lastSections: unknown[] = [];
+      let lastBgmRec: BgmRecommendation | undefined;
+
+      for (let attempt = 0; attempt <= MAX_SCRIPT_RETRIES; attempt++) {
+        if (attempt > 0) {
+          console.warn(`Script generation attempt ${attempt + 1}: retrying due to empty lines`);
+          setStreamingText('');
+        }
+
+        const prompt = buildScriptGenerationPrompt(content, promptConfig, userInstructions);
+        const finalText = await api.generateTextStream(prompt, (chunk) => { setStreamingText(chunk.accumulated); }, { attachments });
+        const { sections, bgmRecommendation: bgmRec } = parseScriptGenerationResponse(finalText);
+        lastSections = sections;
+        lastBgmRec = bgmRec;
+
+        if (validateScriptLines(sections)) break;
+      }
+
+      const typedSections = lastSections as ScriptSection[];
       if (typedSections && typedSections.length > 0) {
         setScriptSections(typedSections);
         setEditingSection(typedSections[0].id);
       }
-      if (bgmRec) setBgmRecommendation(bgmRec);
+      if (lastBgmRec) setBgmRecommendation(lastBgmRec);
     } catch (error) {
       console.error('Script generation error:', error);
       alert(t.projectCreator?.errors?.unknownError || 'An error occurred');
@@ -394,16 +413,10 @@ export function EpisodeCreator({ project, onClose, onSuccess }: EpisodeCreatorPr
     } catch (error) { console.error('Failed to play voice sample:', error); setLoadingVoiceId(null); setPlayingVoiceId(null); }
   };
 
-  // Create custom voice handler for VoicePickerModal
   const handleCreateVoice = async (name: string, description: string, file: File) => {
     const charIndex = voicePickerCharIndex;
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      const { dataUrl } = await processAudioFile(file);
       const updatedVoices = loadVoiceCharacters();
       const newVoice: VoiceCharacter = {
         id: crypto.randomUUID(), name, description: description || (language === 'zh' ? '自定义音色' : 'Custom voice'),

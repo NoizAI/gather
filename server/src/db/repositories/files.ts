@@ -103,22 +103,28 @@ export async function generateFileUrl(
   file: FileRecord,
   expirationMinutes: number = DEFAULT_URL_EXPIRATION_MINUTES
 ): Promise<{ url: string; expiresAt?: string }> {
+  const publicUrl = `${PUBLIC_URL_PREFIX}/${file.gcsBucket}/${file.gcsPath}`;
+
   if (file.isPublic) {
-    // Public files use direct GCS URL
-    return {
-      url: `${PUBLIC_URL_PREFIX}/${file.gcsBucket}/${file.gcsPath}`,
-    };
+    return { url: publicUrl };
   }
   
-  // Private files use signed URL
-  const expiresAt = new Date(Date.now() + expirationMinutes * 60 * 1000);
-  const url = await gcs.getSignedUrl(file.gcsPath, expirationMinutes);
-  
-  return {
-    url,
-    expiresAt: expiresAt.toISOString(),
-  };
+  // Private files use signed URL; fall back to public URL if signing fails
+  // (e.g. when using Application Default Credentials without a service account key)
+  try {
+    const expiresAt = new Date(Date.now() + expirationMinutes * 60 * 1000);
+    const url = await gcs.getSignedUrl(file.gcsPath, expirationMinutes);
+    return { url, expiresAt: expiresAt.toISOString() };
+  } catch (error) {
+    if (!_signWarningLogged) {
+      console.warn('GCS: Cannot generate signed URLs (missing service account key?). Falling back to public URLs.');
+      _signWarningLogged = true;
+    }
+    return { url: publicUrl };
+  }
 }
+
+let _signWarningLogged = false;
 
 /**
  * Add URL to file record

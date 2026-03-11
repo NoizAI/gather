@@ -76,6 +76,14 @@ input, textarea, select { font-family: inherit; }
 input::placeholder, textarea::placeholder { color: var(--t-text-3); }
 select option { background: var(--t-bg-base); color: var(--t-text-1); }
 
+/* Force dark text on light-background inputs in dark mode */
+[data-theme="dark"] input:-webkit-autofill,
+[data-theme="dark"] input:-webkit-autofill:hover,
+[data-theme="dark"] input:-webkit-autofill:focus,
+[data-theme="dark"] textarea:-webkit-autofill {
+  -webkit-text-fill-color: #000;
+}
+
 /* Audio player */
 audio { filter: invert(1) hue-rotate(180deg); }
 audio::-webkit-media-controls-panel { background: var(--t-bg-card); }

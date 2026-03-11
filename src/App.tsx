@@ -126,7 +126,7 @@ function AppContent({ initialLandingData, onClearLandingData, initialMode }: App
 
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard onCreateProject={() => setShowProjectCreator(true)} onViewProjects={() => setCurrentPage('projects')} />;
+        return <Dashboard onCreateProject={() => setShowProjectCreator(true)} onViewProjects={() => setCurrentPage('projects')} onViewProject={handleViewProject} />;
       case 'projects':
         return <ProjectList onCreateProject={() => setShowProjectCreator(true)} onViewProject={handleViewProject} onEditProject={handleEditProject} />;
       case 'voice':
@@ -140,7 +140,7 @@ function AppContent({ initialLandingData, onClearLandingData, initialMode }: App
       case 'settings':
         return <Settings />;
       default:
-        return <Dashboard onCreateProject={() => setShowProjectCreator(true)} onViewProjects={() => setCurrentPage('projects')} />;
+        return <Dashboard onCreateProject={() => setShowProjectCreator(true)} onViewProjects={() => setCurrentPage('projects')} onViewProject={handleViewProject} />;
     }
   };
 

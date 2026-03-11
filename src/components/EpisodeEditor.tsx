@@ -10,6 +10,7 @@ import {
 import { ReligionIconMap } from './icons/ReligionIcons';
 import * as api from '../services/api';
 import { loadVoiceCharacters, loadVoiceCharactersFromCloud, addVoiceCharacter, saveVoiceCharacters } from '../utils/voiceStorage';
+import { processAudioFile } from '../utils/audioTrim';
 import type { SectionVoiceAudio, SectionVoiceStatus, ProductionProgress, MixedAudioOutput } from './ProjectCreator/reducer';
 import { loadMediaItems, getMediaByType, getMediaByProject } from '../utils/mediaStorage';
 import type { MediaItem } from '../types';
@@ -394,12 +395,7 @@ export function EpisodeEditor({ episode, project, onSave, onClose }: EpisodeEdit
   const handleCreateVoice = async (name: string, description: string, file: File) => {
     const charIndex = voicePickerCharIndex;
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      const { dataUrl } = await processAudioFile(file);
       const updatedVoices = loadVoiceCharacters();
       const newVoice: VoiceCharacter = {
         id: crypto.randomUUID(), name, description: description || (language === 'zh' ? '自定义音色' : 'Custom voice'),

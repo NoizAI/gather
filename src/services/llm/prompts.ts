@@ -159,6 +159,62 @@ Return ONLY valid JSON.`;
  * - Array format: [...]  (legacy, when addBgm is false)
  */
 /**
+ * Normalize line objects returned by the LLM.
+ * Maps common alternative field names to the expected { speaker, line } shape.
+ */
+function normalizeLineFields(line: Record<string, unknown>): Record<string, unknown> {
+  if (typeof line.line !== 'string' || !line.line) {
+    for (const alt of ['text', 'content', 'dialogue', 'script', 'speech', 'value']) {
+      if (typeof line[alt] === 'string' && line[alt]) {
+        line.line = line[alt];
+        delete line[alt];
+        break;
+      }
+    }
+  }
+  if (typeof line.speaker !== 'string' || !line.speaker) {
+    for (const alt of ['character', 'name', 'role', 'narrator', 'actor', 'voice', 'person']) {
+      if (typeof line[alt] === 'string' && line[alt]) {
+        line.speaker = line[alt];
+        delete line[alt];
+        break;
+      }
+    }
+  }
+  return line;
+}
+
+/**
+ * Check whether parsed sections contain mostly empty lines,
+ * indicating a field-name mismatch from the LLM response.
+ * Returns true if the sections are valid (enough non-empty lines).
+ */
+export function validateScriptLines(sections: unknown[]): boolean {
+  let totalLines = 0;
+  let emptyLines = 0;
+  for (const raw of sections) {
+    if (!raw || typeof raw !== 'object') continue;
+    const section = raw as Record<string, unknown>;
+    if (!Array.isArray(section.timeline)) continue;
+    for (const ti of section.timeline) {
+      if (!ti || typeof ti !== 'object') continue;
+      const item = ti as Record<string, unknown>;
+      if (!Array.isArray(item.lines)) continue;
+      for (const l of item.lines) {
+        if (!l || typeof l !== 'object') continue;
+        const line = l as Record<string, unknown>;
+        totalLines++;
+        if (!line.line || (typeof line.line === 'string' && !line.line.trim())) {
+          emptyLines++;
+        }
+      }
+    }
+  }
+  if (totalLines === 0) return false;
+  return emptyLines / totalLines < 0.5;
+}
+
+/**
  * Replace LLM-generated IDs (e.g. "section_1", "item_2") with proper UUIDs
  * so they can be persisted to the database.
  */
@@ -176,6 +232,12 @@ function normalizeSectionIds(sections: unknown[]): unknown[] {
           const ti = item as Record<string, unknown>;
           if (typeof ti.id === 'string' && !UUID_RE.test(ti.id)) {
             ti.id = crypto.randomUUID();
+          }
+          if (Array.isArray(ti.lines)) {
+            ti.lines = (ti.lines as unknown[]).map(l => {
+              if (l && typeof l === 'object') return normalizeLineFields(l as Record<string, unknown>);
+              return l;
+            });
           }
         }
       }

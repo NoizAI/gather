@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { Voice } from '../services/api';
 import { designVoice, type VoiceDesignPreview } from '../services/api';
+import { validateAudioFileSize, AudioFileTooLargeError } from '../utils/audioTrim';
 
 interface VoicePickerModalProps {
   /** The character to assign a voice to */
@@ -108,14 +109,19 @@ export function VoicePickerModal({
   }, [character, language, characterLines]);
 
   const handleFileSelect = useCallback((file: File) => {
+    try {
+      validateAudioFileSize(file);
+    } catch (err) {
+      if (err instanceof AudioFileTooLargeError) {
+        alert(language === 'zh' ? '文件大小超过 5MB 限制' : 'File exceeds the 5 MB size limit');
+      }
+      return;
+    }
     setSelectedFile(file);
-    // Only update voiceName if it's currently empty, otherwise keep the prefilled character name
     setVoiceName(prev => prev || file.name.replace(/\.[^.]+$/, ''));
-    // Keep the prefilled character description if it exists
-    // Create preview URL
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
-  }, []);
+  }, [language]);
 
   const handleClearFile = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -247,7 +253,7 @@ export function VoicePickerModal({
 
   const isAssigned = (voiceId: string) => character.assignedVoiceId === voiceId;
 
-  const renderVoiceCard = (voice: { id: string; name: string; description: string; type: 'system' | 'custom' }, showAssignHint?: boolean) => {
+  const renderVoiceCard = (voice: { id: string; name: string; description: string; type: 'system' | 'custom' }) => {
     const assigned = isAssigned(voice.id);
     const isPlaying = playingVoiceId === voice.id;
     const isLoading = loadingVoiceId === voice.id;
@@ -256,8 +262,11 @@ export function VoicePickerModal({
       <div 
         key={voice.id}
         onClick={() => {
-          onAssign(voice.id);
-          if (!showAssignHint) onClose();
+          if (assigned) {
+            onPlayVoice(voice.id);
+          } else {
+            onAssign(voice.id);
+          }
         }}
         className={`relative rounded-xl border p-4 transition-all cursor-pointer group ${
           assigned 
@@ -280,7 +289,7 @@ export function VoicePickerModal({
           </div>
         )}
         <div className="flex items-center gap-3">
-          {/* Avatar with hover play overlay */}
+          {/* Avatar with play overlay */}
           <div 
             className="relative w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
             style={{ background: `${theme.primary}20` }}
@@ -640,7 +649,7 @@ export function VoicePickerModal({
                         {language === 'zh' ? '点击或拖拽' : 'Click or drag'}
                       </p>
                       <p className="text-[10px] text-t-text3 mt-0.5">
-                        WAV, MP3, OGG, FLAC
+                        WAV, MP3, OGG, FLAC · max 5 MB
                       </p>
                     </div>
                   ) : (
@@ -691,18 +700,31 @@ export function VoicePickerModal({
           </div>
         </div>
 
-        {/* Footer hint */}
-        {character.assignedVoiceId && (
-          <div className="px-5 py-3 border-t border-t-border flex items-center gap-2">
-            <Check size={14} style={{ color: theme.primaryLight }} />
-            <span className="text-xs text-t-text3">
-              {language === 'zh' ? '当前已选择: ' : 'Currently selected: '}
-              <span className="text-t-text2 font-medium">
-                {allVoices.find(v => v.id === character.assignedVoiceId)?.name || character.assignedVoiceId}
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-t-border flex items-center gap-2">
+          {character.assignedVoiceId ? (
+            <>
+              <Check size={14} style={{ color: theme.primaryLight }} />
+              <span className="text-xs text-t-text3 flex-1">
+                {language === 'zh' ? '当前已选择: ' : 'Currently selected: '}
+                <span className="text-t-text2 font-medium">
+                  {allVoices.find(v => v.id === character.assignedVoiceId)?.name || character.assignedVoiceId}
+                </span>
               </span>
+            </>
+          ) : (
+            <span className="text-xs text-t-text3 flex-1">
+              {language === 'zh' ? '点击音色卡片以选择' : 'Click a voice card to select'}
             </span>
-          </div>
-        )}
+          )}
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105"
+            style={{ background: character.assignedVoiceId ? theme.primary : 'var(--t-bg-card-hover)', color: character.assignedVoiceId ? '#fff' : 'var(--t-text-2)' }}
+          >
+            {language === 'zh' ? '完成' : 'Done'}
+          </button>
+        </div>
       </div>
     </div>
   );

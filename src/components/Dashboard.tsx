@@ -4,13 +4,15 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Mic2, TrendingUp, ArrowRight, FileText, Plus } from 'lucide-react';
 import { RoleBadge } from './RoleBadge';
+import type { Project } from '../types';
 
 interface DashboardProps {
   onCreateProject: () => void;
   onViewProjects: () => void;
+  onViewProject: (project: Project) => void;
 }
 
-export function Dashboard({ onCreateProject, onViewProjects }: DashboardProps) {
+export function Dashboard({ onCreateProject, onViewProjects, onViewProject }: DashboardProps) {
   const { theme, religion } = useTheme();
   const { getProjectsByReligion } = useProjects();
   const { t } = useLanguage();
@@ -117,7 +119,7 @@ export function Dashboard({ onCreateProject, onViewProjects }: DashboardProps) {
                 key={project.id}
                 className="flex items-center justify-between p-3 md:p-4 rounded-lg md:rounded-xl border border-t-border-lt hover:border-t-border transition-all duration-300 cursor-pointer group gap-3"
                 style={{ background: `${theme.primary}05` }}
-                onClick={onViewProjects}
+                onClick={() => onViewProject(project)}
               >
                 <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
                   <div 

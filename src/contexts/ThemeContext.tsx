@@ -23,10 +23,11 @@ const DEFAULT_COLOR_MODE: ColorMode = 'light';
 /** Inject / update CSS custom-properties on <html> */
 function applyCssVars(religion: Religion, mode: ColorMode) {
   const varsMap = buildCssVarsMap(religion, mode);
-  // Use setProperty for each var (Safari-compatible and more performant)
   Object.entries(varsMap).forEach(([name, value]) => {
     document.documentElement.style.setProperty(name, value);
   });
+  document.documentElement.style.colorScheme = mode;
+  document.documentElement.dataset.theme = mode;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

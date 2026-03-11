@@ -5,6 +5,7 @@
 
 import { query } from '../index.js';
 import { generateUrlsForFileIds, getFileByIdWithUrl, uploadAndCreateFile } from './files.js';
+import { trimAudioDataUrl } from '../../services/audioTrim.js';
 
 // ============================================
 // Types
@@ -299,23 +300,20 @@ export async function uploadVoiceSample(
   userId: string,
   dataUrl: string
 ): Promise<VoiceCharacter | null> {
-  // Verify ownership
   const voice = await getVoiceCharacterById(id, userId);
   if (!voice || voice.userId !== userId) {
     return null;
   }
   
-  // Determine file extension
-  const ext = dataUrl.startsWith('data:audio/wav') ? 'wav' : 'mp3';
+  const trimmedDataUrl = trimAudioDataUrl(dataUrl);
+  const ext = trimmedDataUrl.startsWith('data:audio/wav') ? 'wav' : 'mp3';
   const gcsPath = `killagent/voice-samples/${id}.${ext}`;
   
-  // Upload file and create record
-  const file = await uploadAndCreateFile(userId, dataUrl, gcsPath, {
+  const file = await uploadAndCreateFile(userId, trimmedDataUrl, gcsPath, {
     originalFilename: `${voice.name}-sample.${ext}`,
     isPublic: false,
   });
   
-  // Update voice character
   return updateVoiceCharacter(id, userId, { audioSampleFileId: file.id });
 }
 
@@ -392,8 +390,8 @@ export async function saveAllVoiceCharactersForUser(
       voice.updatedAt,
     ]);
 
-    // Upload base64 audio to GCS when the voice has no stored file yet
-    const audioData = voice.audioSampleUrl || voice.refAudioDataUrl;
+    const rawAudioData = voice.audioSampleUrl || voice.refAudioDataUrl;
+    const audioData = rawAudioData?.startsWith('data:') ? trimAudioDataUrl(rawAudioData) : rawAudioData;
     if (audioData && audioData.startsWith('data:')) {
       const existingRow = await query<{ audio_sample_file_id: string | null; ref_audio_file_id: string | null }>(
         'SELECT audio_sample_file_id, ref_audio_file_id FROM voice_characters WHERE id = $1',

@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useProjects } from '../contexts/ProjectContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { Project, Episode, PROJECT_STAGES, ProjectStage, ProjectSpec } from '../types';
-import { ArrowLeft, Plus, Edit2, Trash2, MoreVertical, CheckCircle2, Circle, FileText, Check, X, Download, Headphones, ChevronDown, Users, Music, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Trash2, MoreVertical, CheckCircle2, Circle, FileText, Check, X, Download, Headphones, ChevronDown, Users, Music, Calendar, Play, Pause } from 'lucide-react';
 import { StageIconMap } from './icons/ReligionIcons';
 import * as api from '../services/api';
 
@@ -22,6 +22,34 @@ export function ProjectDetail({ project, onBack, onEditEpisode, onCreateEpisode 
   const [stageDropdownId, setStageDropdownId] = useState<string | null>(null);
   const [expandedEpisodeId, setExpandedEpisodeId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playingEpisodeId, setPlayingEpisodeId] = useState<string | null>(null);
+  const inlineAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const handleTogglePlay = useCallback((e: React.MouseEvent, episode: Episode) => {
+    e.stopPropagation();
+    if (!episode.audioData || !episode.audioMimeType) return;
+
+    if (playingEpisodeId === episode.id && inlineAudioRef.current) {
+      inlineAudioRef.current.pause();
+      inlineAudioRef.current = null;
+      setPlayingEpisodeId(null);
+      return;
+    }
+
+    if (inlineAudioRef.current) {
+      inlineAudioRef.current.pause();
+      inlineAudioRef.current = null;
+    }
+
+    const audio = new Audio(api.audioDataToUrl(episode.audioData, episode.audioMimeType));
+    audio.addEventListener('ended', () => {
+      setPlayingEpisodeId(null);
+      inlineAudioRef.current = null;
+    });
+    audio.play();
+    inlineAudioRef.current = audio;
+    setPlayingEpisodeId(episode.id);
+  }, [playingEpisodeId]);
 
   const formatDuration = (ms: number): string => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -79,20 +107,23 @@ export function ProjectDetail({ project, onBack, onEditEpisode, onCreateEpisode 
     setStageDropdownId(null);
   };
 
+  const stopAllAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (inlineAudioRef.current) {
+      inlineAudioRef.current.pause();
+      inlineAudioRef.current = null;
+    }
+    setPlayingEpisodeId(null);
+  };
+
   const toggleEpisodeExpand = (episodeId: string) => {
+    stopAllAudio();
     if (expandedEpisodeId === episodeId) {
-      // Stop audio if playing
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
       setExpandedEpisodeId(null);
     } else {
-      // Stop previous audio
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
       setExpandedEpisodeId(episodeId);
     }
   };
@@ -322,6 +353,21 @@ export function ProjectDetail({ project, onBack, onEditEpisode, onCreateEpisode 
                         )}
                       </div>
                     </button>
+
+                    {/* Inline play/pause button */}
+                    {hasAudio && (
+                      <button
+                        onClick={(e) => handleTogglePlay(e, episode)}
+                        className="w-8 h-8 md:w-9 md:h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-all hover:scale-110"
+                        style={{ background: `${theme.primary}20` }}
+                        title={playingEpisodeId === episode.id ? (language === 'zh' ? '暂停' : 'Pause') : (language === 'zh' ? '播放' : 'Play')}
+                      >
+                        {playingEpisodeId === episode.id
+                          ? <Pause size={14} color={theme.primaryLight} />
+                          : <Play size={14} color={theme.primaryLight} style={{ marginLeft: 1 }} />
+                        }
+                      </button>
+                    )}
 
                     {/* Expand/collapse chevron */}
                     <button

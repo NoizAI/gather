@@ -11,6 +11,7 @@ import {
   deleteVoiceCharacterFromCloud,
   loadVoiceCharactersFromCloud,
 } from '../utils/voiceStorage';
+import { processAudioFile, AudioFileTooLargeError } from '../utils/audioTrim';
 
 export function VoiceStudio() {
   const { theme } = useTheme();
@@ -185,33 +186,33 @@ export function VoiceStudio() {
   const handleAudioUpload = async (file: File) => {
     setIsAnalyzing(true);
 
-    // Convert file to base64 data URL (required for TTS voice cloning)
-    const reader = new FileReader();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-    
-    setCharacterForm(prev => ({ ...prev, audioSampleUrl: dataUrl }));
+    try {
+      const { dataUrl, wasTrimmed } = await processAudioFile(file);
+      setCharacterForm(prev => ({ ...prev, audioSampleUrl: dataUrl }));
 
-    // Simulate AI analysis (in real app, this would call an API)
-    await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
-    // Extract filename as suggested name (remove extension)
-    const fileName = file.name.replace(/\.[^/.]+$/, '');
-    // Generate suggested values based on "analysis"
-    const suggestedName = fileName.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-    
-    setCharacterForm(prev => ({
-      ...prev,
-      name: suggestedName || 'Voice Character',
-      description: `Voice character created from ${file.name}`,
-      tags: 'custom, uploaded',
-    }));
-    
-    setIsAnalyzing(false);
-    setAudioUploaded(true);
+      const fileName = file.name.replace(/\.[^/.]+$/, '');
+      const suggestedName = fileName.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      
+      setCharacterForm(prev => ({
+        ...prev,
+        name: suggestedName || 'Voice Character',
+        description: `Voice character created from ${file.name}${wasTrimmed ? ' (trimmed to 30s)' : ''}`,
+        tags: 'custom, uploaded',
+      }));
+      
+      setIsAnalyzing(false);
+      setAudioUploaded(true);
+    } catch (err) {
+      setIsAnalyzing(false);
+      if (err instanceof AudioFileTooLargeError) {
+        alert(language === 'zh' ? '文件大小超过 5MB 限制' : 'File exceeds the 5 MB size limit');
+      } else {
+        alert(language === 'zh' ? '音频文件处理失败' : 'Failed to process audio file');
+        console.error('Audio upload error:', err);
+      }
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -385,13 +386,14 @@ export function VoiceStudio() {
   };
 
   const playCharacterSample = (character: VoiceCharacter) => {
-    if (character.audioSampleUrl) {
+    const audioUrl = character.refAudioDataUrl || character.audioSampleUrl;
+    if (audioUrl) {
       if (playingCharacterId === character.id) {
         characterAudioRef.current?.pause();
         setPlayingCharacterId(null);
       } else {
         if (characterAudioRef.current) {
-          characterAudioRef.current.src = character.audioSampleUrl;
+          characterAudioRef.current.src = audioUrl;
           characterAudioRef.current.play();
           setPlayingCharacterId(character.id);
         }
@@ -649,7 +651,7 @@ export function VoiceStudio() {
                   )}
 
                   <div className="flex items-center gap-2 mt-4 pt-3 border-t border-t-border-lt">
-                    {character.audioSampleUrl && (
+                    {(character.refAudioDataUrl || character.audioSampleUrl) && (
                       <button
                         onClick={() => playCharacterSample(character)}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105"
@@ -764,7 +766,7 @@ export function VoiceStudio() {
                       <p className="text-xs text-t-text2 font-medium">
                         {language === 'zh' ? '点击或拖拽文件' : 'Click or drag file'}
                       </p>
-                      <p className="text-[10px] text-t-text3 mt-1">MP3, WAV, M4A, OGG, FLAC</p>
+                      <p className="text-[10px] text-t-text3 mt-1">MP3, WAV, M4A, OGG, FLAC · max 5 MB</p>
                     </div>
                     <input
                       ref={audioInputRef}

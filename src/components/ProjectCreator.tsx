@@ -19,6 +19,7 @@ import {
   buildScriptGenerationPrompt,
   buildCreativeContextExtractionPrompt,
   parseScriptGenerationResponse,
+  validateScriptLines,
   SpecAnalysisResult,
   CreativeContextExtraction
 } from '../services/llm/prompts';
@@ -36,6 +37,7 @@ import {
 } from './ProjectCreator/reducer';
 import { PROJECT_TEMPLATES } from './ProjectCreator/templates';
 import { loadVoiceCharacters, loadVoiceCharactersFromCloud, addVoiceCharacter } from '../utils/voiceStorage';
+import { processAudioFile } from '../utils/audioTrim';
 import { loadMediaItems, saveMediaItems } from '../utils/mediaStorage';
 import { PRESET_BGM_LIST, MediaPickerModal } from './MediaPickerModal';
 import type { MediaPickerResult } from './MediaPickerModal';
@@ -367,16 +369,16 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
     }
   };
 
-  // Generate script with LLM (streaming)
+  // Generate script with LLM (streaming), with retry on empty lines
+  const MAX_SCRIPT_RETRIES = 2;
   const generateScript = async () => {
     setIsGeneratingScript(true);
-    setStreamingText(''); // Reset streaming text
+    setStreamingText('');
 
     try {
       const hasFiles = contentInput.uploadedFiles.length > 0;
       const hasText = contentInput.textContent.trim().length > 0;
 
-      // When both files and text exist, text is treated as user instructions
       const userInstructions = (hasFiles && hasText) ? contentInput.textContent : undefined;
       const textForCollection = (hasFiles && hasText) ? '' : contentInput.textContent;
 
@@ -384,10 +386,9 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
         textForCollection, contentInput.uploadedFiles, { includeLabels: false, returnAttachments: true }
       );
 
-      // Include template hints in prompt if available (based on voice count selection)
       const templateHints = selectedTemplate?.promptHints[templateConfig.voiceCount];
-      
-      const prompt = buildScriptGenerationPrompt(content, {
+
+      const promptConfig = {
         title: specData.storyTitle,
         targetAudience: specData.targetAudience,
         formatAndDuration: specData.formatAndDuration,
@@ -395,48 +396,57 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
         addBgm: specData.addBgm,
         addSoundEffects: specData.addSoundEffects,
         hasVisualContent: specData.hasVisualContent,
-        // Pass template hints if available
         ...(templateHints && {
           styleHint: templateHints.style,
           structureHint: templateHints.structure,
           voiceDirectionHint: templateHints.voiceDirection,
         }),
-      }, userInstructions, creativeContextRef.current);
+      };
 
-      // Use backend streaming API for progressive generation (with file attachments)
-      const finalText = await api.generateTextStream(
-        prompt,
-        (chunk) => {
-          setStreamingText(chunk.accumulated);
-        },
-        { attachments }
-      );
-      
-      // Parse JSON from final response (handles both array and object formats)
-      const { sections, bgmRecommendation } = parseScriptGenerationResponse(finalText);
-      const typedSections = sections as ScriptSection[];
-      
+      let lastSections: unknown[] = [];
+      let lastBgmRec: BgmRecommendation | undefined;
+
+      for (let attempt = 0; attempt <= MAX_SCRIPT_RETRIES; attempt++) {
+        if (attempt > 0) {
+          console.warn(`Script generation attempt ${attempt + 1}: retrying due to empty lines`);
+          setStreamingText('');
+        }
+
+        const prompt = buildScriptGenerationPrompt(content, promptConfig, userInstructions, creativeContextRef.current);
+
+        const finalText = await api.generateTextStream(
+          prompt,
+          (chunk) => { setStreamingText(chunk.accumulated); },
+          { attachments }
+        );
+
+        const { sections, bgmRecommendation: bgmRec } = parseScriptGenerationResponse(finalText);
+        lastSections = sections;
+        lastBgmRec = bgmRec;
+
+        if (validateScriptLines(sections)) break;
+      }
+
+      const typedSections = lastSections as ScriptSection[];
+
       if (typedSections && typedSections.length > 0) {
         dispatch(actions.setScriptSections(typedSections));
-        // Auto-expand the first section
         setEditingSection(typedSections[0].id);
       }
 
-      // Use AI-recommended preset BGM if available
-      if (bgmRecommendation && specData.addBgm) {
-        const preset = PRESET_BGM_LIST.find(p => p.id === bgmRecommendation.presetId) || PRESET_BGM_LIST[0];
+      if (lastBgmRec && specData.addBgm) {
+        const preset = PRESET_BGM_LIST.find(p => p.id === lastBgmRec.presetId) || PRESET_BGM_LIST[0];
         dispatch(actions.setBgmAudio({
           audioUrl: preset.url,
           mimeType: 'audio/wav',
         }));
-        // Store recommendation for later use
-        setBgmRecommendation(bgmRecommendation);
+        setBgmRecommendation(lastBgmRec);
       }
     } catch (error) {
       handleApiError(error);
     } finally {
       setIsGeneratingScript(false);
-      setStreamingText(''); // Clear streaming text after completion
+      setStreamingText('');
     }
   };
 
@@ -1933,15 +1943,8 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
               onCreateVoice={async (name, description, file) => {
                 const charIndex = voicePickerCharIndex;
                 try {
-                  // Read file as data URL
-                  const dataUrl = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                  });
+                  const { dataUrl } = await processAudioFile(file);
 
-                  // Create new voice character
                   const updatedVoices = addVoiceCharacter(availableVoices, {
                     name: name,
                     description: description || (language === 'zh' ? '自定义音色' : 'Custom voice'),
@@ -1953,7 +1956,6 @@ export function ProjectCreator({ onClose, onSuccess, initialData, creativeContex
                   const newVoice = updatedVoices[updatedVoices.length - 1];
                   setAvailableVoices(updatedVoices);
                   
-                  // Auto-assign to character
                   assignVoiceToCharacter(charIndex, newVoice.id);
                 } catch (error) {
                   console.error('Failed to create voice:', error);
